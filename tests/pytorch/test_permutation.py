@@ -679,11 +679,12 @@ def _test_permutation_and_padding_mask_map(
     else:
         pytest.skip("Invalid dtype.")
 
-
     _tmp_tensor = torch.zeros((num_tokens * num_expert,))
     _tmp_tensor[: int(num_out_tokens)] = 1.0
     _tmp_idx = torch.randperm(num_tokens * num_expert)
-    routing_map = torch.reshape(_tmp_tensor[_tmp_idx], (num_tokens, num_expert)).bool().cuda()
+    routing_map = (
+        torch.reshape(_tmp_tensor[_tmp_idx], (num_tokens, num_expert)).bool().cuda()
+    )
 
     probs = torch.rand(num_tokens, num_expert).cuda() * routing_map
     row_sums = probs.sum(dim=1, keepdim=True)
@@ -698,8 +699,12 @@ def _test_permutation_and_padding_mask_map(
     num_permute_pad_out_tokens = target_tokens_per_expert.sum().item()
 
     permute_pad_fwd_input = torch.rand((num_tokens, hidden_size), dtype=dtype).cuda()
-    permute_pad_bwd_input = torch.rand((num_permute_pad_out_tokens, hidden_size), dtype=dtype).cuda()
-    unpermute_unpad_bwd_input = torch.rand((num_tokens, hidden_size), dtype=dtype).cuda()
+    permute_pad_bwd_input = torch.rand(
+        (num_permute_pad_out_tokens, hidden_size), dtype=dtype
+    ).cuda()
+    unpermute_unpad_bwd_input = torch.rand(
+        (num_tokens, hidden_size), dtype=dtype
+    ).cuda()
     permute_pad_fwd_input.requires_grad_(True)
 
     restore_shape = permute_pad_fwd_input.shape
@@ -715,10 +720,12 @@ def _test_permutation_and_padding_mask_map(
         routing_map,
         num_out_tokens=num_out_tokens,
     )
-    tokens_per_expert_list =  tokens_per_expert.tolist()
+    tokens_per_expert_list = tokens_per_expert.tolist()
     fp8_padding = Fp8Padding(num_expert, align_size)
     permuted_paded_output, _ = fp8_padding(permuted_output, tokens_per_expert_list)
-    permuted_paded_probs, _ = fp8_padding(permuted_probs.unsqueeze(-1), tokens_per_expert_list)
+    permuted_paded_probs, _ = fp8_padding(
+        permuted_probs.unsqueeze(-1), tokens_per_expert_list
+    )
 
     permuted_paded_output.backward(permute_pad_bwd_input, retain_graph=True)
 
@@ -729,7 +736,9 @@ def _test_permutation_and_padding_mask_map(
 
     fp8_unpadding = Fp8Unpadding(num_expert, align_size)
     unpaded_output = fp8_unpadding(unpermute_unpad_fwd_input, tokens_per_expert_list)
-    unpermuted_unpaded_output = te_unpermute(unpaded_output, row_id_map, restore_shape=restore_shape)
+    unpermuted_unpaded_output = te_unpermute(
+        unpaded_output, row_id_map, restore_shape=restore_shape
+    )
 
     unpermuted_unpaded_output.backward(unpermute_unpad_bwd_input, retain_graph=True)
 
@@ -749,25 +758,36 @@ def _test_permutation_and_padding_mask_map(
         fusion_permuted_padded_probs,
         row_id_map,
         pad_offsets,
-        target_tokens_per_expert
+        target_tokens_per_expert,
     ) = te_permute_and_pad_with_probs(
-        fusion_permute_and_pad_fwd_input, probs, routing_map, tokens_per_expert, align_size
+        fusion_permute_and_pad_fwd_input,
+        probs,
+        routing_map,
+        tokens_per_expert,
+        align_size,
     )
     fusion_permuted_padded_probs = fusion_permuted_padded_probs.unsqueeze(-1)
 
     fusion_permute_pad_bwd_input = permute_pad_bwd_input.detach()
-    fusion_permuted_padded_output.backward(fusion_permute_pad_bwd_input, retain_graph=True)
+    fusion_permuted_padded_output.backward(
+        fusion_permute_pad_bwd_input, retain_graph=True
+    )
 
     # fusion unpad and unpermute
     fusion_unpermute_unpad_fwd_input = fusion_permuted_padded_output.detach()
     fusion_unpermute_unpad_fwd_input.requires_grad_(True)
 
     fusion_unpermuted_unpaded_output = te_unpermute(
-        fusion_unpermute_unpad_fwd_input, row_id_map, restore_shape=restore_shape, pad_offsets=pad_offsets
+        fusion_unpermute_unpad_fwd_input,
+        row_id_map,
+        restore_shape=restore_shape,
+        pad_offsets=pad_offsets,
     )
 
     fusion_unpermute_bwd_input = unpermute_unpad_bwd_input.detach()
-    fusion_unpermuted_unpaded_output.backward(fusion_unpermute_bwd_input, retain_graph=True)
+    fusion_unpermuted_unpaded_output.backward(
+        fusion_unpermute_bwd_input, retain_graph=True
+    )
 
     ###################################################################################################################################
     #
@@ -779,12 +799,16 @@ def _test_permutation_and_padding_mask_map(
     permuted_paded_output_ = permuted_paded_output.float()
     fusion_permuted_padded_output_ = fusion_permuted_padded_output.float()
     permute_pad_fwd_input_grad = permute_pad_fwd_input.grad.float()
-    fusion_permute_and_pad_fwd_input_grad = fusion_permute_and_pad_fwd_input.grad.float()
+    fusion_permute_and_pad_fwd_input_grad = (
+        fusion_permute_and_pad_fwd_input.grad.float()
+    )
 
     unpermuted_unpaded_output_ = unpermuted_unpaded_output.float()
     fusion_unpermuted_unpaded_output_ = fusion_unpermuted_unpaded_output.float()
     unpermute_unpad_fwd_input_grad = unpermute_unpad_fwd_input.grad.float()
-    fusion_unpermute_unpad_fwd_input_grad = fusion_unpermute_unpad_fwd_input.grad.float()
+    fusion_unpermute_unpad_fwd_input_grad = (
+        fusion_unpermute_unpad_fwd_input.grad.float()
+    )
 
     torch.testing.assert_close(
         permuted_paded_output_,
@@ -811,7 +835,10 @@ def _test_permutation_and_padding_mask_map(
         **tols,
     )
     torch.testing.assert_close(
-        permuted_paded_probs.float(), fusion_permuted_padded_probs.float(), msg=f"Mismatch in te_permute_and_pad bwd", **tols
+        permuted_paded_probs.float(),
+        fusion_permuted_padded_probs.float(),
+        msg=f"Mismatch in te_permute_and_pad bwd",
+        **tols,
     )
 
     ###################################################################################################################################
@@ -820,6 +847,7 @@ def _test_permutation_and_padding_mask_map(
     #
     ###################################################################################################################################
     if BENCHMARK:
+
         def permute_and_pad():
             permuted_output, permuted_probs, row_id_map = te_permute_with_probs(
                 permute_pad_fwd_input,
@@ -836,19 +864,19 @@ def _test_permutation_and_padding_mask_map(
                 fusion_permuted_padded_probs,
                 row_id_map,
                 pad_offsets,
-                target_tokens_per_expert
+                target_tokens_per_expert,
             ) = te_permute_and_pad_with_probs(
-                fusion_permute_and_pad_fwd_input, probs, routing_map, tokens_per_expert, align_size
+                fusion_permute_and_pad_fwd_input,
+                probs,
+                routing_map,
+                tokens_per_expert,
+                align_size,
             )
             fusion_permuted_padded_probs = fusion_permuted_padded_probs.unsqueeze(-1)
 
-        t1 = perf_test_cuda_kernel(
-            lambda: permute_and_pad()
-        )
+        t1 = perf_test_cuda_kernel(lambda: permute_and_pad())
 
-        t2 = perf_test_cuda_kernel(
-            lambda: fusion_permute_and_pad()
-        )
+        t2 = perf_test_cuda_kernel(lambda: fusion_permute_and_pad())
 
         print(f"permute_and_pad\t\tfwd: naive: {t1:.3f} ms,  fusion: {t2:.3f} ms")
 
@@ -873,16 +901,24 @@ def _test_permutation_and_padding_mask_map(
         print(f"permute_and_pad\t\tbwd: naive: {t1:.3f} ms,  fusion: {t2:.3f} ms")
 
         def unpad_unpermute():
-            unpaded_output = fp8_unpadding(unpermute_unpad_fwd_input, tokens_per_expert_list)
-            unpermuted_unpaded_output = te_unpermute(unpaded_output, row_id_map, restore_shape=restore_shape)
+            unpaded_output = fp8_unpadding(
+                unpermute_unpad_fwd_input, tokens_per_expert_list
+            )
+            unpermuted_unpaded_output = te_unpermute(
+                unpaded_output, row_id_map, restore_shape=restore_shape
+            )
 
-            unpermuted_unpaded_output.backward(unpermute_unpad_bwd_input, retain_graph=True)
-        t1 = perf_test_cuda_kernel(
-            lambda: unpad_unpermute()
-        )
+            unpermuted_unpaded_output.backward(
+                unpermute_unpad_bwd_input, retain_graph=True
+            )
+
+        t1 = perf_test_cuda_kernel(lambda: unpad_unpermute())
         t2 = perf_test_cuda_kernel(
             lambda: te_unpermute(
-                fusion_unpermute_unpad_fwd_input, row_id_map, restore_shape=restore_shape, pad_offsets=pad_offsets
+                fusion_unpermute_unpad_fwd_input,
+                row_id_map,
+                restore_shape=restore_shape,
+                pad_offsets=pad_offsets,
             )
         )
         print(f"unpermute_and_unpad\tfwd: naive: {t1:.3f} ms,  fusion: {t2:.3f} ms")
@@ -891,9 +927,7 @@ def _test_permutation_and_padding_mask_map(
             lambda: backward_wrapper(
                 unpermuted_unpaded_output,
                 unpermute_unpad_bwd_input,
-                forward_input=(
-                    [unpermute_unpad_fwd_input, probs]
-                ),
+                forward_input=([unpermute_unpad_fwd_input, probs]),
                 retain_graph=True,
                 accumulate_grad=False,
             )
@@ -902,9 +936,7 @@ def _test_permutation_and_padding_mask_map(
             lambda: backward_wrapper(
                 fusion_unpermuted_unpaded_output,
                 fusion_unpermute_bwd_input,
-                forward_input=(
-                    [fusion_unpermute_unpad_fwd_input, probs]
-                ),
+                forward_input=([fusion_unpermute_unpad_fwd_input, probs]),
                 retain_graph=True,
                 accumulate_grad=False,
             )

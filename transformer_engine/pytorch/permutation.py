@@ -592,7 +592,7 @@ def moe_permute_and_pad_with_probs(
     probs: torch.Tensor,
     routing_map: torch.Tensor,
     tokens_per_expert: torch.Tensor,
-    align_size: int
+    align_size: int,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Permute the tokens and probs based on the routing_map.
@@ -638,6 +638,7 @@ def moe_permute_and_pad_with_probs(
         inp, routing_map, target_tokens_per_expert.sum().item(), probs, pad_offsets
     )
     return output, permuted_probs, row_id_map, pad_offsets, target_tokens_per_expert
+
 
 def moe_unpermute(
     inp: torch.Tensor,
@@ -686,7 +687,9 @@ def moe_unpermute(
     if map_type == "index":
         return _moe_unpermute_index_map.apply(inp, row_id_map, merging_probs)
     if map_type == "mask":
-        return _moe_unpermute_mask_map.apply(inp, row_id_map, merging_probs, restore_shape, pad_offsets)
+        return _moe_unpermute_mask_map.apply(
+            inp, row_id_map, merging_probs, restore_shape, pad_offsets
+        )
     raise ValueError("map_type should be one of 'mask' or 'index'")
 
 
