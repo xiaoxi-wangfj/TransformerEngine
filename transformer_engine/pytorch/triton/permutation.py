@@ -195,12 +195,12 @@ def permute_with_mask_map(
     row_id_map: torch.Tensor,
     probs: torch.Tensor,
     scale: torch.Tensor,
+    pad_offsets: torch.Tensor,
     num_tokens: int,
     num_experts: int,
     num_out_tokens: int,
     hidden_size: int,
     scale_hidden_dim: int,
-    pad_offsets: Union[torch.Tensor, None],
 ):
     # pylint: disable=missing-function-docstring
     if pad_offsets is not None:
@@ -353,10 +353,10 @@ def unpermute_with_mask_map(
     row_id_map: torch.Tensor,
     merging_probs: Union[torch.Tensor, None],
     permuted_probs: Union[torch.Tensor, None],
+    pad_offsets: Union[torch.Tensor, None],
     num_tokens: int,
     num_experts: int,
     hidden_size: int,
-    pad_offsets: Union[torch.Tensor, None],
 ):
     # pylint: disable=missing-function-docstring
     output = torch.empty((num_tokens, hidden_size), dtype=inp.dtype, device="cuda")

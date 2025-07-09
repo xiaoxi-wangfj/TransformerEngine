@@ -253,12 +253,12 @@ class _moe_permute_mask_map(torch.autograd.Function):
             row_id_map,
             probs,
             fp8_scale,
+            pad_offsets,
             num_tokens,
             num_experts,
             num_out_tokens,
             hidden_size,
             scale_hidden_dim,
-            pad_offsets,
         )
 
         if fp8:
@@ -296,11 +296,10 @@ class _moe_permute_mask_map(torch.autograd.Function):
                     requires_grad=output.requires_grad,
                 )
 
-        ctx.save_for_backward(row_id_map)
+        ctx.save_for_backward(row_id_map, pad_offsets)
         ctx.num_experts = num_experts
         ctx.num_tokens = num_tokens
         ctx.hidden_size = hidden_size
-        ctx.pad_offsets = pad_offsets
         return output, row_id_map, permuted_probs
 
     @staticmethod
@@ -317,7 +316,7 @@ class _moe_permute_mask_map(torch.autograd.Function):
         act_grad = None
         probs_grad = None
         if ctx.needs_input_grad[0]:
-            (row_id_map,) = ctx.saved_tensors
+            row_id_map, pad_offsets = ctx.saved_tensors
             assert not isinstance(
                 permuted_act_grad, QuantizedTensor
             ), "The backward of moe_permute does not support FP8."
@@ -326,10 +325,10 @@ class _moe_permute_mask_map(torch.autograd.Function):
                 row_id_map,
                 None,
                 permuted_probs_grad,
+                pad_offsets,
                 ctx.num_tokens,
                 ctx.num_experts,
                 ctx.hidden_size,
-                ctx.pad_offsets,
             )
         if not ctx.needs_input_grad[3]:
             probs_grad = None
@@ -376,22 +375,21 @@ class _moe_unpermute_mask_map(torch.autograd.Function):
             row_id_map,
             merging_probs,
             None,
+            pad_offsets,
             num_tokens,
             num_experts,
             hidden_size,
-            pad_offsets,
         )
 
         if with_probs:
             ctx.save_for_backward(inp, row_id_map, merging_probs)
         else:
-            ctx.save_for_backward(row_id_map)
+            ctx.save_for_backward(row_id_map, pad_offsets)
         ctx.num_experts = num_experts
         ctx.num_tokens = num_tokens
         ctx.num_permuted_tokens = inp.size(0)
         ctx.hidden_size = hidden_size
         ctx.with_probs = with_probs
-        ctx.pad_offsets = pad_offsets
         return unpermuted_output
 
     @staticmethod
@@ -406,7 +404,7 @@ class _moe_unpermute_mask_map(torch.autograd.Function):
             if ctx.with_probs:
                 fwd_input, row_id_map, merging_probs = ctx.saved_tensors
             else:
-                (row_id_map,) = ctx.saved_tensors
+                row_id_map, pad_offsets = ctx.saved_tensors
 
             fp8 = isinstance(unpermuted_act_grad, QuantizedTensor)
             per_tensor_recipe = isinstance(unpermuted_act_grad, Float8Tensor)
@@ -464,12 +462,12 @@ class _moe_unpermute_mask_map(torch.autograd.Function):
                     row_id_map,
                     None,
                     fp8_scale,
+                    pad_offsets,
                     ctx.num_tokens,
                     ctx.num_experts,
                     ctx.num_permuted_tokens,
                     ctx.hidden_size,
                     scale_hidden_dim,
-                    ctx.pad_offsets,
                 )
 
             if fp8:
